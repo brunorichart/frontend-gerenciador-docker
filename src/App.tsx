@@ -134,16 +134,21 @@ function App() {
     let success = ''
     if (dialog.kind === 'container') {
       const ports: Record<string, number> = {}
-      const portInput = String(values.ports || '').trim()
-      if (portInput) {
-        for (const mapping of portInput.split(',')) {
-          const [hostPort, containerPort] = mapping.trim().split(':').map(Number)
-          if (!hostPort || !containerPort) {
-            setError('Informe as portas no formato host:container, por exemplo 8080:80.')
-            return
-          }
-          ports[`${containerPort}/tcp`] = hostPort
+      const mappings = JSON.parse(String(values.portMappings || '[]')) as { host: string; container: string }[]
+      for (const mapping of mappings) {
+        if (!mapping.host && !mapping.container) continue
+        const hostPort = Number(mapping.host)
+        const containerPort = Number(mapping.container)
+        if (!mapping.host || !mapping.container || !Number.isInteger(hostPort) || !Number.isInteger(containerPort) || hostPort < 1 || hostPort > 65535 || containerPort < 1 || containerPort > 65535) {
+          setError('Preencha as duas portas com valores entre 1 e 65535.')
+          return
         }
+        const containerPortKey = `${containerPort}/tcp`
+        if (ports[containerPortKey] !== undefined) {
+          setError(`A porta ${containerPort} do container foi informada mais de uma vez.`)
+          return
+        }
+        ports[containerPortKey] = hostPort
       }
       path = '/api/containers/'
       body = {
@@ -253,7 +258,7 @@ function App() {
         </div>
       </main>
 
-      {dialog && dialog.kind !== 'logs' && <ResourceDialog kind={dialog.kind} busy={busy} onClose={() => setDialog(null)} onSubmit={submitDialog} />}
+      {dialog && dialog.kind !== 'logs' && <ResourceDialog kind={dialog.kind} images={data.images} busy={busy} onClose={() => setDialog(null)} onSubmit={submitDialog} />}
       {dialog?.kind === 'logs' && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null) }}><section className="modal logs-modal" role="dialog" aria-modal="true" aria-labelledby="logs-title"><div className="modal-head"><div><span className="modal-kicker">SAÍDA DO CONTAINER</span><h2 id="logs-title">{dialog.title}</h2></div><button className="close-button" onClick={() => setDialog(null)} aria-label="Fechar"><X size={19} /></button></div><div className="logs-toolbar"><TerminalSquare size={15} />Últimas 100 linhas <button onClick={() => { const item = data.containers.find((container) => container.id === dialog.target); if (item) void showLogs(item) }}><RefreshCw size={14} />Recarregar</button></div><pre className="logs-output">{logsLoading ? <span className="logs-loading"><LoaderCircle size={16} className="spinning" />Carregando logs...</span> : logs}</pre></section></div>}
     </div>
   )
@@ -316,7 +321,10 @@ function NetworkTable({ items, busy, onRemove }: { items: Network[]; busy: boole
   return <table><thead><tr><th>REDE</th><th>ID</th><th>DRIVER</th><th className="actions-heading">AÇÕES</th></tr></thead><tbody>{items.length ? items.map((item) => <tr key={item.id}><td><div className="resource-main"><span className="resource-icon network"><NetworkIcon size={16} /></span><strong>{item.name}</strong></div></td><td className="id-cell">{item.id}</td><td><span className="type-chip">{item.driver}</span></td><td><div className="row-actions"><IconButton label="Remover rede" onClick={() => onRemove(item)} danger disabled={busy}><Trash2 size={15} /></IconButton></div></td></tr>) : <TableEmpty label="Nenhuma rede corresponde à busca." />}</tbody></table>
 }
 
-function ResourceDialog({ kind, busy, onClose, onSubmit }: { kind: Exclude<DialogKind, 'logs'>; busy: boolean; onClose: () => void; onSubmit: (values: Record<string, FormDataEntryValue>) => void }) {
+function ResourceDialog({ kind, images, busy, onClose, onSubmit }: { kind: Exclude<DialogKind, 'logs'>; images: Image[]; busy: boolean; onClose: () => void; onSubmit: (values: Record<string, FormDataEntryValue>) => void }) {
+  const imageOptions = [...new Set(images.flatMap((image) => image.tags.filter((tag) => tag && tag !== '<none>:<none>')))]
+  const [imageSource, setImageSource] = useState(imageOptions[0] || '__manual__')
+  const [portMappings, setPortMappings] = useState([{ host: '', container: '' }])
   const config = {
     container: { title: 'Novo container', kicker: 'CRIAR RECURSO', submit: 'Criar container', icon: ContainerIcon },
     image: { title: 'Baixar imagem', kicker: 'DOCKER HUB', submit: 'Baixar imagem', icon: Download },
@@ -325,11 +333,21 @@ function ResourceDialog({ kind, busy, onClose, onSubmit }: { kind: Exclude<Dialo
   }[kind]
   const Icon = config.icon
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><section className="modal" role="dialog" aria-modal="true" aria-labelledby="resource-dialog-title"><div className="modal-head"><div className="modal-title-wrap"><span className="dialog-icon"><Icon size={18} /></span><div><span className="modal-kicker">{config.kicker}</span><h2 id="resource-dialog-title">{config.title}</h2></div></div><button className="close-button" onClick={onClose} aria-label="Fechar" disabled={busy}><X size={19} /></button></div>
-    <form className="resource-form" onSubmit={(event) => { event.preventDefault(); onSubmit(Object.fromEntries(new FormData(event.currentTarget).entries())) }}>
+    <form className="resource-form" onSubmit={(event) => {
+      event.preventDefault()
+      const formData = new FormData(event.currentTarget)
+      const values = Object.fromEntries(formData.entries())
+      if (kind === 'container') {
+        values.image = imageSource === '__manual__' ? String(formData.get('customImage') || '') : imageSource
+        values.portMappings = JSON.stringify(portMappings)
+      }
+      onSubmit(values)
+    }}>
       {kind === 'container' && <>
         <label>Nome do container<input name="name" required autoFocus placeholder="ex.: web-app" /></label>
-        <label>Imagem<input name="image" required placeholder="ex.: nginx:latest" /></label>
-        <label>Portas <span className="optional-label">opcional</span><input name="ports" placeholder="8080:80, 8443:443" /><small>Formato host:container. Exemplo: 8080:80.</small></label>
+        <label>Imagem Docker<select value={imageSource} onChange={(event) => setImageSource(event.target.value)}>{imageOptions.length > 0 && <optgroup label="Imagens locais">{imageOptions.map((image) => <option value={image} key={image}>{image}</option>)}</optgroup>}<option value="__manual__">Informar outra imagem...</option></select><small>Selecione uma imagem local ou informe uma referência do Docker Hub.</small></label>
+        {imageSource === '__manual__' && <label>Nome da imagem<input name="customImage" required autoFocus placeholder="ex.: nginx:latest" /><small>Use o repositório e, opcionalmente, uma tag.</small></label>}
+        <div className="port-mappings"><div className="port-heading"><span>Mapeamento de portas</span><span className="optional-label">opcional</span></div>{portMappings.map((mapping, index) => <div className="port-row" key={index}><label>Porta local (host)<input type="number" min="1" max="65535" inputMode="numeric" value={mapping.host} placeholder="ex.: 8080" onChange={(event) => setPortMappings((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, host: event.target.value } : item))} /></label><span className="port-arrow" aria-hidden="true">→</span><label>Porta no container<input type="number" min="1" max="65535" inputMode="numeric" value={mapping.container} placeholder="ex.: 80" onChange={(event) => setPortMappings((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, container: event.target.value } : item))} /></label>{portMappings.length > 1 && <button className="port-remove" type="button" title="Remover mapeamento" aria-label="Remover mapeamento de porta" onClick={() => setPortMappings((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></button>}</div>)}<button className="add-port-button" type="button" onClick={() => setPortMappings((current) => [...current, { host: '', container: '' }])}><Plus size={14} />Adicionar porta</button><small>Porta local recebe conexões do host e encaminha para a porta interna do container.</small></div>
         <label>Política de reinício<select name="restart_policy" defaultValue="no"><option value="no">Não reiniciar</option><option value="always">Sempre</option><option value="unless-stopped">Exceto se parado</option><option value="on-failure">Em caso de falha</option></select></label>
       </>}
       {kind === 'image' && <label>Nome da imagem<input name="name" required autoFocus placeholder="ex.: nginx:latest" /><small>Use o nome do repositório e, opcionalmente, uma tag.</small></label>}

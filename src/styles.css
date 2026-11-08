@@ -184,6 +184,17 @@ td:last-child { min-width: 150px; }
 .resource-form input:focus, .resource-form select:focus { border-color: #8bb599; box-shadow: 0 0 0 3px #e8f4eb; }
 .resource-form small { color: #949d95; font-size: 9px; font-weight: 400; }
 .optional-label { display: inline; margin-left: 4px; color: #99a29a; font-weight: 400; }
+.port-mappings { display: grid; gap: 9px; }
+.port-heading { display: flex; align-items: baseline; color: #46534a; font-size: 10px; font-weight: 700; }
+.port-heading .optional-label { font-weight: 400; }
+.port-row { display: grid; grid-template-columns: minmax(0, 1fr) 16px minmax(0, 1fr) 28px; align-items: end; gap: 6px; }
+.port-row label { display: grid; min-width: 0; gap: 6px; color: #69756c; font-size: 9px; font-weight: 600; }
+.port-row input { height: 35px; }
+.port-arrow { align-self: center; padding-top: 17px; color: #94a097; font-size: 13px; text-align: center; }
+.port-remove { display: grid; width: 28px; height: 35px; place-items: center; border: 1px solid #e3e8e2; border-radius: 4px; background: #fff; color: #929c94; cursor: pointer; }
+.port-remove:hover { border-color: #f1ded8; background: #fff4f0; color: #bd5d48; }
+.add-port-button { display: inline-flex; width: fit-content; align-items: center; gap: 6px; border: 0; background: transparent; padding: 2px 0; color: #287b53; font-size: 10px; font-weight: 700; cursor: pointer; }
+.add-port-button:hover { color: #175f3e; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #edf0ec; margin-top: 4px; padding-top: 14px; }
 .logs-modal { width: min(760px, 100%); }
 .logs-toolbar { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #edf0ec; background: #f9faf8; padding: 10px 17px; color: #859087; font: 10px var(--mono); }
