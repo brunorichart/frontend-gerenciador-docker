@@ -28,8 +28,11 @@ O Vite encaminha `/api` e `/health` para `http://127.0.0.1:8000`; assim, o backe
 - Containers: listar, criar, iniciar, parar, reiniciar, remover, consultar logs, abrir aplicações com portas web publicadas e executar comandos em containers ativos.
 - Imagens: listar, baixar e remover.
 - Volumes: listar, criar e remover.
-- Redes: listar, criar e remover.
+- Redes: listar, criar e remover; conectar ou desconectar containers, consultar sub-rede, gateway e IPs internos.
+- Conectividade: consultar e copiar os endereços IPv4 da máquina para acesso por outros dispositivos da rede local.
 - Visão geral com estado da API e do Docker Engine.
+
+O IP de um container é interno à rede Docker. Para acessar um serviço de outro dispositivo, use o IP da máquina e uma porta publicada no container. Em redes bridge criadas pelo usuário, os containers conectados também podem se localizar pelo nome.
 
 O terminal permite executar comandos dentro de containers ativos. Mantenha a API acessível apenas a pessoas confiáveis e não a exponha à internet.
 

@@ -25,15 +25,18 @@ import {
   RotateCw,
   Download,
   ExternalLink,
+  Copy,
+  Link as LinkIcon,
+  Unlink,
 } from 'lucide-react'
 import { formatBytes, loadDockerData, request, type Container, type DockerData, type Image, type Network, type Volume } from './api'
 
 type Section = 'overview' | 'containers' | 'images' | 'volumes' | 'networks'
-type DialogKind = 'container' | 'image' | 'volume' | 'network' | 'logs' | 'shell'
+type DialogKind = 'container' | 'image' | 'volume' | 'network' | 'network-members' | 'logs' | 'shell'
 type DialogState = { kind: DialogKind; title?: string; target?: string }
 
 const emptyData: DockerData = {
-  containers: [], images: [], volumes: [], networks: [],
+  containers: [], images: [], volumes: [], networks: [], host_addresses: [],
   health: { api: 'offline', docker: 'offline' },
 }
 
@@ -286,8 +289,11 @@ function App() {
               }} />}
               {section === 'images' && <ImageTable items={filteredImages} busy={busy} onRemove={(item) => removeResource(`/api/images/${encodeURIComponent(item.id)}`, `a imagem ${displayImage(item.tags)}`)} />}
               {section === 'volumes' && <VolumeTable items={filteredVolumes} busy={busy} onRemove={(item) => removeResource(`/api/volumes/${encodeURIComponent(item.name)}`, `o volume ${item.name}`)} />}
-              {section === 'networks' && <NetworkTable items={filteredNetworks} busy={busy} onRemove={(item) => removeResource(`/api/networks/${encodeURIComponent(item.id)}`, `a rede ${item.name}`)} />}
+              {section === 'networks' && <NetworkTable items={filteredNetworks} busy={busy} onManage={(item) => setDialog({ kind: 'network-members', title: item.name, target: item.id })} onRemove={(item) => removeResource(`/api/networks/${encodeURIComponent(item.id)}`, `a rede ${item.name}`)} />}
             </div>
+            {section === 'networks' && <HostAddressBar addresses={data.host_addresses} onCopy={(address) => {
+              void navigator.clipboard.writeText(address).then(() => setNotice(`IP ${address} copiado.`)).catch(() => setError('Não foi possível copiar o endereço IP.'))
+            }} />}
           </>}
           <footer className="page-footer"><span><span className="footer-led" />Dados atualizados ao vivo</span><span>API local <b>127.0.0.1:8000</b></span></footer>
         </div>
@@ -296,6 +302,7 @@ function App() {
       {dialog && (dialog.kind === 'container' || dialog.kind === 'image' || dialog.kind === 'volume' || dialog.kind === 'network') && <ResourceDialog kind={dialog.kind} images={data.images} volumes={data.volumes} busy={busy} onClose={() => setDialog(null)} onSubmit={submitDialog} />}
       {dialog?.kind === 'logs' && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null) }}><section className="modal logs-modal" role="dialog" aria-modal="true" aria-labelledby="logs-title"><div className="modal-head"><div><span className="modal-kicker">SAÍDA DO CONTAINER</span><h2 id="logs-title">{dialog.title}</h2></div><button className="close-button" onClick={() => setDialog(null)} aria-label="Fechar"><X size={19} /></button></div><div className="logs-toolbar"><TerminalSquare size={15} />Últimas 100 linhas <button onClick={() => { const item = data.containers.find((container) => container.id === dialog.target); if (item) void showLogs(item) }}><RefreshCw size={14} />Recarregar</button></div><pre className="logs-output">{logsLoading ? <span className="logs-loading"><LoaderCircle size={16} className="spinning" />Carregando logs...</span> : logs}</pre></section></div>}
       {dialog?.kind === 'shell' && <ContainerShellDialog containerId={dialog.target || ''} title={dialog.title || 'Container'} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'network-members' && <NetworkConnectionsDialog network={data.networks.find((item) => item.id === dialog.target)} containers={data.containers} busy={busy} onClose={() => setDialog(null)} onConnect={(containerId) => perform(() => request(`/api/networks/${encodeURIComponent(dialog.target || '')}/connect`, { method: 'POST', body: JSON.stringify({ container_id: containerId }) }), 'Container conectado à rede.')} onDisconnect={(containerId, containerName) => perform(() => request(`/api/networks/${encodeURIComponent(dialog.target || '')}/containers/${encodeURIComponent(containerId)}`, { method: 'DELETE' }), `Container ${containerName} desconectado da rede.`)} />}
     </div>
   )
 }
@@ -357,8 +364,43 @@ function VolumeTable({ items, busy, onRemove }: { items: Volume[]; busy: boolean
   return <table><thead><tr><th>VOLUME</th><th>DRIVER</th><th>PONTO DE MONTAGEM</th><th className="actions-heading">AÇÕES</th></tr></thead><tbody>{items.length ? items.map((item) => <tr key={item.name}><td><div className="resource-main"><span className="resource-icon volume"><Database size={16} /></span><strong>{item.name}</strong></div></td><td><span className="type-chip">{item.driver}</span></td><td className="path-cell">{item.mountpoint}</td><td><div className="row-actions"><IconButton label="Remover volume" onClick={() => onRemove(item)} danger disabled={busy}><Trash2 size={15} /></IconButton></div></td></tr>) : <TableEmpty label="Nenhum volume corresponde à busca." />}</tbody></table>
 }
 
-function NetworkTable({ items, busy, onRemove }: { items: Network[]; busy: boolean; onRemove: (item: Network) => void }) {
-  return <table><thead><tr><th>REDE</th><th>ID</th><th>DRIVER</th><th className="actions-heading">AÇÕES</th></tr></thead><tbody>{items.length ? items.map((item) => <tr key={item.id}><td><div className="resource-main"><span className="resource-icon network"><NetworkIcon size={16} /></span><strong>{item.name}</strong></div></td><td className="id-cell">{item.id}</td><td><span className="type-chip">{item.driver}</span></td><td><div className="row-actions"><IconButton label="Remover rede" onClick={() => onRemove(item)} danger disabled={busy}><Trash2 size={15} /></IconButton></div></td></tr>) : <TableEmpty label="Nenhuma rede corresponde à busca." />}</tbody></table>
+function NetworkTable({ items, busy, onManage, onRemove }: { items: Network[]; busy: boolean; onManage: (item: Network) => void; onRemove: (item: Network) => void }) {
+  return <table><thead><tr><th>REDE</th><th>DRIVER</th><th>SUB-REDE / GATEWAY</th><th>CONTAINERS CONECTADOS</th><th className="actions-heading">AÇÕES</th></tr></thead><tbody>{items.length ? items.map((item) => <tr key={item.id}>
+    <td><div className="resource-main"><span className="resource-icon network"><NetworkIcon size={16} /></span><span className="network-name"><strong>{item.name}</strong><small>{item.id}</small></span></div></td>
+    <td><span className="type-chip">{item.driver}</span></td>
+    <td className="network-address-cell"><span>Rede {item.subnet || 'não informada'}</span><span>Gateway {item.gateway || 'não informado'}</span></td>
+    <td><div className="network-member-list">{item.containers.length ? item.containers.map((container) => <span className="network-member" key={container.id}><strong>{container.name}</strong><code>{container.ipv4_address || 'sem IP'}</code></span>) : <span className="network-no-members">Nenhum container conectado</span>}</div></td>
+    <td><div className="row-actions"><IconButton label="Associar containers" onClick={() => onManage(item)} disabled={busy || item.driver === 'host' || item.driver === 'null'}><LinkIcon size={15} /></IconButton><IconButton label="Remover rede" onClick={() => onRemove(item)} danger disabled={busy}><Trash2 size={15} /></IconButton></div></td>
+  </tr>) : <TableEmpty label="Nenhuma rede corresponde à busca." />}</tbody></table>
+}
+
+function HostAddressBar({ addresses, onCopy }: { addresses: string[]; onCopy: (address: string) => void }) {
+  return <section className="host-address-bar"><span className="host-address-title"><Server size={16} />IP desta máquina</span>{addresses.length ? <div className="host-address-list">{addresses.map((address) => <span className="host-address" key={address}><code>{address}</code><IconButton label={`Copiar IP ${address}`} onClick={() => onCopy(address)}><Copy size={14} /></IconButton></span>)}</div> : <span className="network-no-members">Nenhum endereço IPv4 local encontrado</span>}<small>Use o IP da mesma rede para acessar serviços publicados neste computador.</small></section>
+}
+
+function NetworkConnectionsDialog({ network, containers, busy, onClose, onConnect, onDisconnect }: {
+  network?: Network
+  containers: Container[]
+  busy: boolean
+  onClose: () => void
+  onConnect: (containerId: string) => void
+  onDisconnect: (containerId: string, containerName: string) => void
+}) {
+  const [selectedContainer, setSelectedContainer] = useState('')
+  if (!network) return null
+  const connectedIds = new Set(network.containers.map((container) => container.id))
+  const availableContainers = containers.filter((container) => !connectedIds.has(container.id))
+
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><section className="modal network-modal" role="dialog" aria-modal="true" aria-labelledby="network-dialog-title"><div className="modal-head"><div className="modal-title-wrap"><span className="dialog-icon"><NetworkIcon size={18} /></span><div><span className="modal-kicker">REDE DOCKER</span><h2 id="network-dialog-title">{network.name}</h2></div></div><button className="close-button" onClick={onClose} aria-label="Fechar"><X size={19} /></button></div>
+    <div className="network-dialog-content"><div className="network-dialog-address"><span>Sub-rede <code>{network.subnet || 'não informada'}</code></span><span>Gateway <code>{network.gateway || 'não informado'}</code></span></div>
+      <div className="network-dialog-section"><div className="network-dialog-heading"><strong>Containers nesta rede</strong><span>{network.containers.length}</span></div>
+        {network.containers.length ? <div className="network-connected-list">{network.containers.map((container) => <div className="network-connected-row" key={container.id}><span className="resource-icon container"><ContainerIcon size={15} /></span><span className="network-connected-name"><strong>{container.name}</strong><small>{container.status}</small></span><code>{container.ipv4_address || 'IP pendente'}</code><IconButton label={`Desconectar ${container.name}`} onClick={() => onDisconnect(container.id, container.name)} disabled={busy} danger><Unlink size={15} /></IconButton></div>)}</div> : <div className="network-empty-members">Ainda não há containers associados.</div>}
+      </div>
+      <form className="network-connect-form" onSubmit={(event) => { event.preventDefault(); if (selectedContainer) onConnect(selectedContainer) }}><label>Adicionar container<select value={selectedContainer} onChange={(event) => setSelectedContainer(event.target.value)}><option value="">Selecione um container</option>{availableContainers.map((container) => <option value={container.id} key={container.id}>{container.name} · {container.status}</option>)}</select></label><button className="primary-button" type="submit" disabled={busy || !selectedContainer}><LinkIcon size={15} />Conectar</button></form>
+      <small className="network-dialog-hint">Em redes bridge criadas pelo usuário, os containers também podem se comunicar usando o nome um do outro.</small>
+    </div>
+    <div className="modal-actions network-modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button></div>
+  </section></div>
 }
 
 function suggestedContainerPath(image: string) {
@@ -370,7 +412,7 @@ function suggestedContainerPath(image: string) {
   return '/app/data'
 }
 
-function ResourceDialog({ kind, images, volumes, busy, onClose, onSubmit }: { kind: Exclude<DialogKind, 'logs' | 'shell'>; images: Image[]; volumes: Volume[]; busy: boolean; onClose: () => void; onSubmit: (values: Record<string, FormDataEntryValue>) => void }) {
+function ResourceDialog({ kind, images, volumes, busy, onClose, onSubmit }: { kind: Exclude<DialogKind, 'logs' | 'shell' | 'network-members'>; images: Image[]; volumes: Volume[]; busy: boolean; onClose: () => void; onSubmit: (values: Record<string, FormDataEntryValue>) => void }) {
   const imageOptions = [...new Set(images.flatMap((image) => image.tags.filter((tag) => tag && tag !== '<none>:<none>')))]
   const [imageSource, setImageSource] = useState(imageOptions[0] || '__manual__')
   const [portMappings, setPortMappings] = useState([{ host: '', container: '' }])

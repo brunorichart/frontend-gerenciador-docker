@@ -156,6 +156,14 @@ tbody tr:hover { background: #fbfcfa; }
 .id-cell { color: #919b93; font: 10px var(--mono); }
 .path-cell { max-width: 360px; overflow: hidden; color: #828d84; font: 10px var(--mono); text-overflow: ellipsis; }
 .type-chip { display: inline-flex; border: 1px solid #e7ebe6; border-radius: 3px; background: #fafbf9; padding: 4px 7px; color: #6f7a71; font: 9px var(--mono); }
+.network-name { display: grid; min-width: 0; gap: 3px; }
+.network-name small { color: #9aa39c; font: 9px var(--mono); }
+.network-address-cell { display: grid; align-content: center; gap: 4px; color: #748077; font: 9px var(--mono); }
+.network-member-list { display: flex; max-width: 340px; flex-wrap: wrap; gap: 5px; }
+.network-member { display: inline-flex; align-items: center; gap: 6px; border: 1px solid #e5ebe4; border-radius: 3px; background: #fafbf9; padding: 4px 6px; }
+.network-member strong { color: #445148; font-size: 9px; }
+.network-member code { color: #76847a; font: 9px var(--mono); }
+.network-no-members { color: #939e95; font-size: 10px; }
 .actions-heading { text-align: right; }
 td:last-child { min-width: 150px; }
 .row-actions { display: flex; justify-content: flex-end; gap: 3px; }
@@ -167,6 +175,12 @@ td:last-child { min-width: 150px; }
 .page-footer > span:first-child { display: inline-flex; align-items: center; gap: 7px; }
 .footer-led { width: 6px; height: 6px; background: #62a77b; }
 .page-footer b { color: #69766c; font-weight: 400; }
+.host-address-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 10px 18px; border: 1px solid #e2e8e1; border-radius: 4px; margin-top: 12px; background: rgba(255,255,255,.92); padding: 10px 13px; }
+.host-address-title { display: inline-flex; align-items: center; gap: 7px; color: #526057; font-size: 10px; font-weight: 700; }
+.host-address-list { display: flex; flex-wrap: wrap; gap: 5px; }
+.host-address { display: inline-flex; align-items: center; border: 1px solid #e6ebe5; border-radius: 3px; background: #f9fbf8; padding: 1px 3px 1px 7px; }
+.host-address code { color: #28734e; font: 10px var(--mono); }
+.host-address-bar > small { flex: 1 1 100%; color: #89948b; font-size: 9px; }
 
 .modal-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; overflow-y: auto; background: rgba(21, 33, 25, .38); padding: 20px; backdrop-filter: blur(3px); animation: fade .15s ease both; }
 .modal { width: min(450px, 100%); border: 1px solid #e0e7df; border-radius: 6px; background: #fff; box-shadow: 0 18px 60px #10201526; animation: modal-enter .22s ease both; }
@@ -205,6 +219,26 @@ td:last-child { min-width: 150px; }
 .resource-form .volume-guidance { border-left: 2px solid #d5a44c; background: #fbf7eb; padding: 8px 9px; color: #756647; font-size: 9px; line-height: 1.55; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #edf0ec; margin-top: 4px; padding-top: 14px; }
 .logs-modal { width: min(760px, 100%); }
+.network-modal { width: min(620px, 100%); }
+.network-dialog-content { display: grid; gap: 17px; padding: 17px 20px; }
+.network-dialog-address { display: flex; flex-wrap: wrap; gap: 8px; }
+.network-dialog-address span { display: inline-flex; align-items: center; gap: 7px; border: 1px solid #e6ebe5; border-radius: 3px; background: #f8faf7; padding: 7px 9px; color: #77837a; font-size: 10px; }
+.network-dialog-address code { color: #405147; font: 10px var(--mono); }
+.network-dialog-section { display: grid; gap: 8px; }
+.network-dialog-heading { display: flex; justify-content: space-between; color: #46534a; font-size: 11px; }
+.network-dialog-heading span { color: #849087; font: 10px var(--mono); }
+.network-connected-list { display: grid; border-top: 1px solid #edf0ec; }
+.network-connected-row { display: flex; min-width: 0; align-items: center; gap: 9px; border-bottom: 1px solid #edf0ec; padding: 8px 0; }
+.network-connected-name { display: grid; min-width: 0; flex: 1; gap: 3px; }
+.network-connected-name strong { overflow: hidden; color: #35433a; font-size: 10px; text-overflow: ellipsis; }
+.network-connected-name small { color: #8d978f; font-size: 9px; }
+.network-connected-row > code { color: #637269; font: 10px var(--mono); }
+.network-empty-members { border: 1px dashed #dfe6de; padding: 16px; color: #929c93; font-size: 10px; text-align: center; }
+.network-connect-form { display: flex; align-items: end; gap: 9px; border-top: 1px solid #edf0ec; padding-top: 14px; }
+.network-connect-form label { display: grid; min-width: 0; flex: 1; gap: 6px; color: #46534a; font-size: 10px; font-weight: 700; }
+.network-connect-form select { width: 100%; height: 37px; border: 1px solid #dfe5de; border-radius: 4px; background: #fff; padding: 0 10px; color: #28362d; font-size: 11px; }
+.network-dialog-hint { border-left: 2px solid #91b99c; background: #f4f8f3; padding: 8px 9px; color: #6d7d70; font-size: 9px; line-height: 1.5; }
+.network-modal-actions { padding: 0 20px 17px; }
 .logs-toolbar { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #edf0ec; background: #f9faf8; padding: 10px 17px; color: #859087; font: 10px var(--mono); }
 .logs-toolbar button { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; border: 0; background: transparent; color: #377c56; font: 10px 'DM Sans', sans-serif; cursor: pointer; }
 .logs-toolbar label { display: inline-flex; align-items: center; gap: 6px; }

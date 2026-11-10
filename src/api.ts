@@ -22,6 +22,17 @@ export type Network = {
   id: string
   name: string
   driver: string
+  subnet: string | null
+  gateway: string | null
+  containers: NetworkContainer[]
+}
+
+export type NetworkContainer = {
+  id: string
+  name: string
+  status: string
+  ipv4_address: string | null
+  aliases: string[]
 }
 
 export type DockerData = {
@@ -29,6 +40,7 @@ export type DockerData = {
   images: Image[]
   volumes: Volume[]
   networks: Network[]
+  host_addresses: string[]
   health: { api: string; docker: string; docker_version?: string }
 }
 
@@ -52,14 +64,15 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export async function loadDockerData(): Promise<DockerData> {
-  const [containers, images, volumes, networks, health] = await Promise.all([
+  const [containers, images, volumes, networks, host, health] = await Promise.all([
     request<Container[]>('/api/containers/?all=true'),
     request<Image[]>('/api/images/'),
     request<Volume[]>('/api/volumes/'),
     request<Network[]>('/api/networks/'),
+    request<{ addresses: string[] }>('/api/networks/host-addresses'),
     request<DockerData['health']>('/health'),
   ])
-  return { containers, images, volumes, networks, health }
+  return { containers, images, volumes, networks, host_addresses: host.addresses, health }
 }
 
 export function formatBytes(bytes: number): string {
