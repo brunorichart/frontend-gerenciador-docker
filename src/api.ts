@@ -3,6 +3,7 @@ export type Container = {
   name: string
   image: string[]
   status: string
+  ports?: { container_port: number; host_port: number; protocol: string; host_ip: string }[]
 }
 
 export type Image = {

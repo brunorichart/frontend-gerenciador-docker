@@ -24,11 +24,12 @@ import {
   Square,
   RotateCw,
   Download,
+  ExternalLink,
 } from 'lucide-react'
 import { formatBytes, loadDockerData, request, type Container, type DockerData, type Image, type Network, type Volume } from './api'
 
 type Section = 'overview' | 'containers' | 'images' | 'volumes' | 'networks'
-type DialogKind = 'container' | 'image' | 'volume' | 'network' | 'logs'
+type DialogKind = 'container' | 'image' | 'volume' | 'network' | 'logs' | 'shell'
 type DialogState = { kind: DialogKind; title?: string; target?: string }
 
 const emptyData: DockerData = {
@@ -150,11 +151,35 @@ function App() {
         }
         ports[containerPortKey] = hostPort
       }
+      let volume: { kind: 'volume' | 'bind'; source: string; target: string; read_only: boolean; copy_initial_data?: boolean } | null = null
+      if (values.persistData === 'on') {
+        const volumeTarget = String(values.volumeTarget || '').trim()
+        if (!volumeTarget.startsWith('/')) {
+          setError('Informe uma pasta válida dentro do container, começando com /.')
+          return
+        }
+        const volumeKind = String(values.volumeKind || 'volume')
+        if (volumeKind === 'bind') {
+          const hostPath = String(values.hostPath || '').trim()
+          if (!hostPath) {
+            setError('Informe a pasta do computador que deseja compartilhar.')
+            return
+          }
+          volume = { kind: 'bind', source: hostPath, target: volumeTarget, read_only: false, copy_initial_data: values.copyInitialData === 'on' }
+        } else {
+          const selectedVolume = String(values.volumeName || '__new__')
+          const volumeName = selectedVolume === '__new__'
+            ? `${name.toLowerCase().replace(/[^a-z0-9_.-]+/g, '-')}-data`
+            : selectedVolume
+          volume = { kind: 'volume', source: volumeName, target: volumeTarget, read_only: false }
+        }
+      }
       path = '/api/containers/'
       body = {
         name,
         image: String(values.image || '').trim(),
         ports: Object.keys(ports).length ? ports : null,
+        volume,
         detach: true,
         restart_policy: String(values.restart_policy || 'no'),
       }
@@ -244,8 +269,18 @@ function App() {
             </div>
             <div className="table-frame">
               {section === 'containers' && <ContainerTable items={filteredContainers} busy={busy} onAction={(item, actionName) => {
+                if (actionName === 'shell') { setDialog({ kind: 'shell', title: item.name, target: item.id }); return }
                 if (actionName === 'logs') { void showLogs(item); return }
                 if (actionName === 'remove') { removeResource(`/api/containers/${encodeURIComponent(item.id)}`, `o container ${item.name}`); return }
+                if (actionName === 'open') {
+                  const webPort = item.ports?.find((port) => port.protocol === 'tcp' && [80, 443, 3000, 5173, 8000, 8080, 8081].includes(port.container_port))
+                  if (webPort) {
+                    const host = ['127.0.0.1', '::', '::1', '0.0.0.0'].includes(webPort.host_ip) ? 'localhost' : window.location.hostname
+                    const protocol = webPort.container_port === 443 ? 'https' : 'http'
+                    window.open(`${protocol}://${host}:${webPort.host_port}`, '_blank', 'noopener,noreferrer')
+                  }
+                  return
+                }
                 const endpoint = actionName === 'start' ? 'start' : actionName === 'stop' ? 'stop' : 'restart'
                 void perform(() => request(`/api/containers/${encodeURIComponent(item.id)}/${endpoint}`, { method: 'POST' }), `Container ${actionName === 'start' ? 'iniciado' : actionName === 'stop' ? 'parado' : 'reiniciado'}.`)
               }} />}
@@ -258,8 +293,9 @@ function App() {
         </div>
       </main>
 
-      {dialog && dialog.kind !== 'logs' && <ResourceDialog kind={dialog.kind} images={data.images} busy={busy} onClose={() => setDialog(null)} onSubmit={submitDialog} />}
+      {dialog && (dialog.kind === 'container' || dialog.kind === 'image' || dialog.kind === 'volume' || dialog.kind === 'network') && <ResourceDialog kind={dialog.kind} images={data.images} volumes={data.volumes} busy={busy} onClose={() => setDialog(null)} onSubmit={submitDialog} />}
       {dialog?.kind === 'logs' && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null) }}><section className="modal logs-modal" role="dialog" aria-modal="true" aria-labelledby="logs-title"><div className="modal-head"><div><span className="modal-kicker">SAÍDA DO CONTAINER</span><h2 id="logs-title">{dialog.title}</h2></div><button className="close-button" onClick={() => setDialog(null)} aria-label="Fechar"><X size={19} /></button></div><div className="logs-toolbar"><TerminalSquare size={15} />Últimas 100 linhas <button onClick={() => { const item = data.containers.find((container) => container.id === dialog.target); if (item) void showLogs(item) }}><RefreshCw size={14} />Recarregar</button></div><pre className="logs-output">{logsLoading ? <span className="logs-loading"><LoaderCircle size={16} className="spinning" />Carregando logs...</span> : logs}</pre></section></div>}
+      {dialog?.kind === 'shell' && <ContainerShellDialog containerId={dialog.target || ''} title={dialog.title || 'Container'} onClose={() => setDialog(null)} />}
     </div>
   )
 }
@@ -305,8 +341,12 @@ function TableEmpty({ label }: { label: string }) {
   return <tr><td colSpan={6}><div className="table-empty"><Box size={21} /><span>{label}</span></div></td></tr>
 }
 
-function ContainerTable({ items, busy, onAction }: { items: Container[]; busy: boolean; onAction: (item: Container, action: 'start' | 'stop' | 'restart' | 'logs' | 'remove') => void }) {
-  return <table><thead><tr><th>CONTAINER</th><th>IMAGEM</th><th>STATUS</th><th>ID</th><th className="actions-heading">AÇÕES</th></tr></thead><tbody>{items.length ? items.map((item) => <tr key={item.id}><td><div className="resource-main"><span className="resource-icon container"><ContainerIcon size={16} /></span><strong>{item.name}</strong></div></td><td className="mono-cell">{displayImage(item.image)}</td><td><StatusBadge status={item.status} /></td><td className="id-cell">{item.id}</td><td><div className="row-actions"><IconButton label={item.status.toLowerCase() === 'running' ? 'Parar container' : 'Iniciar container'} onClick={() => onAction(item, item.status.toLowerCase() === 'running' ? 'stop' : 'start')} disabled={busy}>{item.status.toLowerCase() === 'running' ? <Square size={15} /> : <Play size={15} />}</IconButton><IconButton label="Reiniciar container" onClick={() => onAction(item, 'restart')} disabled={busy}><RotateCw size={15} /></IconButton><IconButton label="Ver logs" onClick={() => onAction(item, 'logs')}><TerminalSquare size={15} /></IconButton><IconButton label="Remover container" onClick={() => onAction(item, 'remove')} danger disabled={busy}><Trash2 size={15} /></IconButton></div></td></tr>) : <TableEmpty label="Nenhum container corresponde à busca." />}</tbody></table>
+function ContainerTable({ items, busy, onAction }: { items: Container[]; busy: boolean; onAction: (item: Container, action: 'start' | 'stop' | 'restart' | 'logs' | 'remove' | 'shell' | 'open') => void }) {
+  return <table><thead><tr><th>CONTAINER</th><th>IMAGEM</th><th>STATUS</th><th>ID</th><th className="actions-heading">AÇÕES</th></tr></thead><tbody>{items.length ? items.map((item) => {
+    const active = item.status.toLowerCase() === 'running'
+    const webPort = item.ports?.find((port) => port.protocol === 'tcp' && [80, 443, 3000, 5173, 8000, 8080, 8081].includes(port.container_port))
+    return <tr key={item.id}><td><div className="resource-main"><span className="resource-icon container"><ContainerIcon size={16} /></span><strong>{item.name}</strong></div></td><td className="mono-cell">{displayImage(item.image)}</td><td><StatusBadge status={item.status} /></td><td className="id-cell">{item.id}</td><td><div className="row-actions"><IconButton label={active ? 'Parar container' : 'Iniciar container'} onClick={() => onAction(item, active ? 'stop' : 'start')} disabled={busy}>{active ? <Square size={15} /> : <Play size={15} />}</IconButton><IconButton label="Abrir aplicação" onClick={() => onAction(item, 'open')} disabled={busy || !active || !webPort}><ExternalLink size={15} /></IconButton><IconButton label="Abrir shell" onClick={() => onAction(item, 'shell')} disabled={busy || !active}><TerminalSquare size={15} /></IconButton><IconButton label="Reiniciar container" onClick={() => onAction(item, 'restart')} disabled={busy}><RotateCw size={15} /></IconButton><IconButton label="Ver logs" onClick={() => onAction(item, 'logs')}><Activity size={15} /></IconButton><IconButton label="Remover container" onClick={() => onAction(item, 'remove')} danger disabled={busy}><Trash2 size={15} /></IconButton></div></td></tr>
+  }) : <TableEmpty label="Nenhum container corresponde à busca." />}</tbody></table>
 }
 
 function ImageTable({ items, busy, onRemove }: { items: Image[]; busy: boolean; onRemove: (item: Image) => void }) {
@@ -321,10 +361,25 @@ function NetworkTable({ items, busy, onRemove }: { items: Network[]; busy: boole
   return <table><thead><tr><th>REDE</th><th>ID</th><th>DRIVER</th><th className="actions-heading">AÇÕES</th></tr></thead><tbody>{items.length ? items.map((item) => <tr key={item.id}><td><div className="resource-main"><span className="resource-icon network"><NetworkIcon size={16} /></span><strong>{item.name}</strong></div></td><td className="id-cell">{item.id}</td><td><span className="type-chip">{item.driver}</span></td><td><div className="row-actions"><IconButton label="Remover rede" onClick={() => onRemove(item)} danger disabled={busy}><Trash2 size={15} /></IconButton></div></td></tr>) : <TableEmpty label="Nenhuma rede corresponde à busca." />}</tbody></table>
 }
 
-function ResourceDialog({ kind, images, busy, onClose, onSubmit }: { kind: Exclude<DialogKind, 'logs'>; images: Image[]; busy: boolean; onClose: () => void; onSubmit: (values: Record<string, FormDataEntryValue>) => void }) {
+function suggestedContainerPath(image: string) {
+  const normalized = image.toLowerCase()
+  if (normalized.includes('nginx')) return '/usr/share/nginx/html'
+  if (normalized.includes('httpd')) return '/usr/local/apache2/htdocs'
+  if (normalized.includes('apache2') || (normalized.includes('php') && normalized.includes('apache')) || normalized.includes('apache')) return '/var/www/html'
+  if (normalized.includes('mysql') || normalized.includes('mariadb')) return '/var/lib/mysql'
+  return '/app/data'
+}
+
+function ResourceDialog({ kind, images, volumes, busy, onClose, onSubmit }: { kind: Exclude<DialogKind, 'logs' | 'shell'>; images: Image[]; volumes: Volume[]; busy: boolean; onClose: () => void; onSubmit: (values: Record<string, FormDataEntryValue>) => void }) {
   const imageOptions = [...new Set(images.flatMap((image) => image.tags.filter((tag) => tag && tag !== '<none>:<none>')))]
   const [imageSource, setImageSource] = useState(imageOptions[0] || '__manual__')
   const [portMappings, setPortMappings] = useState([{ host: '', container: '' }])
+  const [persistData, setPersistData] = useState(false)
+  const [volumeKind, setVolumeKind] = useState<'volume' | 'bind'>('volume')
+  const [hostSystem, setHostSystem] = useState('windows')
+  const [volumeTarget, setVolumeTarget] = useState(suggestedContainerPath(imageOptions[0] || ''))
+  const [copyInitialData, setCopyInitialData] = useState(true)
+  useEffect(() => { setVolumeTarget(suggestedContainerPath(imageSource)) }, [imageSource])
   const config = {
     container: { title: 'Novo container', kicker: 'CRIAR RECURSO', submit: 'Criar container', icon: ContainerIcon },
     image: { title: 'Baixar imagem', kicker: 'DOCKER HUB', submit: 'Baixar imagem', icon: Download },
@@ -340,13 +395,27 @@ function ResourceDialog({ kind, images, busy, onClose, onSubmit }: { kind: Exclu
       if (kind === 'container') {
         values.image = imageSource === '__manual__' ? String(formData.get('customImage') || '') : imageSource
         values.portMappings = JSON.stringify(portMappings)
+        values.volumeKind = volumeKind
       }
       onSubmit(values)
     }}>
       {kind === 'container' && <>
         <label>Nome do container<input name="name" required autoFocus placeholder="ex.: web-app" /></label>
         <label>Imagem Docker<select value={imageSource} onChange={(event) => setImageSource(event.target.value)}>{imageOptions.length > 0 && <optgroup label="Imagens locais">{imageOptions.map((image) => <option value={image} key={image}>{image}</option>)}</optgroup>}<option value="__manual__">Informar outra imagem...</option></select><small>Selecione uma imagem local ou informe uma referência do Docker Hub.</small></label>
-        {imageSource === '__manual__' && <label>Nome da imagem<input name="customImage" required autoFocus placeholder="ex.: nginx:latest" /><small>Use o repositório e, opcionalmente, uma tag.</small></label>}
+        {imageSource === '__manual__' && <label>Nome da imagem<input name="customImage" required autoFocus placeholder="ex.: nginx:latest" onChange={(event) => setVolumeTarget(suggestedContainerPath(event.target.value))} /><small>Use o repositório e, opcionalmente, uma tag.</small></label>}
+        <div className="volume-setup">
+          <label className="volume-toggle"><input type="checkbox" name="persistData" checked={persistData} onChange={(event) => setPersistData(event.target.checked)} /><span><strong>Guardar os dados deste container</strong><small>Os arquivos continuam salvos mesmo se o container for removido.</small></span></label>
+          {persistData && <div className="volume-fields">
+            <label>Tipo de armazenamento<select name="volumeKind" value={volumeKind} onChange={(event) => setVolumeKind(event.target.value as 'volume' | 'bind')}><option value="volume">Volume gerenciado pelo Docker</option><option value="bind">Pasta do computador (bind)</option></select><small>Docker gerencia o volume; pasta do computador facilita localizar os arquivos.</small></label>
+            {volumeKind === 'volume' ? <><label>Volume Docker<select name="volumeName" defaultValue="__new__"><option value="__new__">Criar automaticamente</option>{volumes.map((volume) => <option value={volume.name} key={volume.name}>Reutilizar {volume.name}</option>)}</select><small>O nome será criado automaticamente a partir do container.</small></label><small className="volume-guidance">Volumes Docker preservam os arquivos iniciais da imagem quando criados pela primeira vez.</small></> : <>
+              <label>Sistema do computador<select name="hostSystem" value={hostSystem} onChange={(event) => setHostSystem(event.target.value)}><option value="windows">Windows</option><option value="linux">Linux</option><option value="macos">macOS</option></select></label>
+              <label>Pasta no computador<input name="hostPath" required placeholder={hostSystem === 'windows' ? 'ex.: C:\\Users\\Ana\\docker-data\\site' : hostSystem === 'macos' ? 'ex.: /Users/ana/docker-data/site' : 'ex.: /home/ana/docker-data/site'} /><small>A pasta precisa existir no computador onde o Docker está executando.</small></label>
+              <label className="volume-toggle"><input type="checkbox" name="copyInitialData" checked={copyInitialData} onChange={(event) => setCopyInitialData(event.target.checked)} /><span><strong>Copiar arquivos iniciais do container</strong><small>Usado apenas se a pasta do computador estiver vazia; arquivos existentes não serão substituídos.</small></span></label>
+              <small className="volume-guidance">O bind usa os arquivos desta pasta no lugar dos arquivos originais do container.</small>
+            </>}
+            <label>Pasta usada pelo aplicativo<input name="volumeTarget" required value={volumeTarget} onChange={(event) => setVolumeTarget(event.target.value)} placeholder="ex.: /var/lib/mysql" /><small>Sugestão para {imageSource === '__manual__' ? 'esta imagem' : imageSource}; você pode alterar.</small></label>
+          </div>}
+        </div>
         <div className="port-mappings"><div className="port-heading"><span>Mapeamento de portas</span><span className="optional-label">opcional</span></div>{portMappings.map((mapping, index) => <div className="port-row" key={index}><label>Porta local (host)<input type="number" min="1" max="65535" inputMode="numeric" value={mapping.host} placeholder="ex.: 8080" onChange={(event) => setPortMappings((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, host: event.target.value } : item))} /></label><span className="port-arrow" aria-hidden="true">→</span><label>Porta no container<input type="number" min="1" max="65535" inputMode="numeric" value={mapping.container} placeholder="ex.: 80" onChange={(event) => setPortMappings((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, container: event.target.value } : item))} /></label>{portMappings.length > 1 && <button className="port-remove" type="button" title="Remover mapeamento" aria-label="Remover mapeamento de porta" onClick={() => setPortMappings((current) => current.filter((_, itemIndex) => itemIndex !== index))}><X size={15} /></button>}</div>)}<button className="add-port-button" type="button" onClick={() => setPortMappings((current) => [...current, { host: '', container: '' }])}><Plus size={14} />Adicionar porta</button><small>Porta local recebe conexões do host e encaminha para a porta interna do container.</small></div>
         <label>Política de reinício<select name="restart_policy" defaultValue="no"><option value="no">Não reiniciar</option><option value="always">Sempre</option><option value="unless-stopped">Exceto se parado</option><option value="on-failure">Em caso de falha</option></select></label>
       </>}
@@ -356,6 +425,35 @@ function ResourceDialog({ kind, images, busy, onClose, onSubmit }: { kind: Exclu
       <div className="modal-actions"><button type="button" className="secondary-button" onClick={onClose} disabled={busy}>Cancelar</button><button type="submit" className="primary-button" disabled={busy}>{busy ? <LoaderCircle size={16} className="spinning" /> : <Icon size={16} />}{busy ? 'Processando...' : config.submit}</button></div>
     </form>
   </section></div>
+}
+
+function ContainerShellDialog({ containerId, title, onClose }: { containerId: string; title: string; onClose: () => void }) {
+  const [shell, setShell] = useState('/bin/sh')
+  const [command, setCommand] = useState('')
+  const [output, setOutput] = useState('Terminal pronto.')
+  const [busy, setBusy] = useState(false)
+
+  async function runCommand(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const entered = command.trim()
+    if (!entered || busy) return
+    setBusy(true)
+    setCommand('')
+    setOutput((current) => `${current}\n$ ${entered}\n`)
+    try {
+      const result = await request<{ exit_code: number; output: string }>(`/api/containers/${encodeURIComponent(containerId)}/exec`, {
+        method: 'POST',
+        body: JSON.stringify({ command: entered, shell }),
+      })
+      setOutput((current) => `${current}${result.output || '(sem saída)'}\n[ código ${result.exit_code} ]\n`)
+    } catch (reason) {
+      setOutput((current) => `${current}${reason instanceof Error ? reason.message : 'Comando não executado.'}\n`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><section className="modal logs-modal shell-modal" role="dialog" aria-modal="true" aria-labelledby="shell-title"><div className="modal-head"><div><span className="modal-kicker">TERMINAL DO CONTAINER</span><h2 id="shell-title">{title}</h2></div><button className="close-button" onClick={onClose} aria-label="Fechar" disabled={busy}><X size={19} /></button></div><div className="logs-toolbar"><TerminalSquare size={15} /><label>Shell<select value={shell} onChange={(event) => setShell(event.target.value)} disabled={busy}><option value="/bin/sh">sh</option><option value="/bin/bash">bash</option><option value="cmd.exe">Windows cmd</option></select></label><span>Cada comando inicia um processo novo.</span></div><pre className="logs-output shell-output">{output}{busy && <span className="logs-loading"><LoaderCircle size={15} className="spinning" />Executando...</span>}</pre><form className="shell-command-form" onSubmit={(event) => void runCommand(event)}><span aria-hidden="true">&gt;_</span><input aria-label="Comando para executar" autoFocus value={command} onChange={(event) => setCommand(event.target.value)} placeholder="Digite um comando..." disabled={busy} /><button type="submit" title="Executar comando" aria-label="Executar comando" disabled={busy || !command.trim()}><Play size={16} /></button></form></section></div>
 }
 
 export default App

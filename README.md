@@ -25,10 +25,12 @@ O Vite encaminha `/api` e `/health` para `http://127.0.0.1:8000`; assim, o backe
 
 ## Recursos
 
-- Containers: listar, criar, iniciar, parar, reiniciar, remover e consultar logs.
+- Containers: listar, criar, iniciar, parar, reiniciar, remover, consultar logs, abrir aplicações com portas web publicadas e executar comandos em containers ativos.
 - Imagens: listar, baixar e remover.
 - Volumes: listar, criar e remover.
 - Redes: listar, criar e remover.
 - Visão geral com estado da API e do Docker Engine.
+
+O terminal permite executar comandos dentro de containers ativos. Mantenha a API acessível apenas a pessoas confiáveis e não a exponha à internet.
 
 Para validar o bundle de produção, execute `npm.cmd run build`.
