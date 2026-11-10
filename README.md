@@ -26,16 +26,20 @@ O Vite encaminha `/api` e `/health` para `http://127.0.0.1:8000`; assim, o backe
 ## Recursos
 
 - Containers: listar, criar, iniciar, parar, reiniciar, remover, consultar logs, abrir aplicações com portas web publicadas e executar comandos em containers ativos.
+- Terminal: instalar ferramentas comuns (ping, vim, curl, SSH, wget, Git e utilitários) com detecção automática de apt, apk, dnf ou yum.
 - Imagens: listar, baixar e remover.
 - Volumes: listar, criar e remover.
 - Redes: listar, criar e remover; conectar ou desconectar containers, consultar sub-rede, gateway e IPs internos.
 - Conectividade: consultar e copiar os endereços IPv4 da máquina para acesso por outros dispositivos da rede local.
 - Redes: testar ping escolhendo um container de origem e outro container ou endereço IP/nome como destino; são enviados até quatro pacotes, com limite de dez segundos.
 - Visão geral com estado da API e do Docker Engine.
+- Máquina: sistema operacional, CPU, memória, discos e endereços IP do host onde o backend está executando.
 
 O IP de um container é interno à rede Docker. Para acessar um serviço de outro dispositivo, use o IP da máquina e uma porta publicada no container. Em redes bridge criadas pelo usuário, os containers conectados também podem se localizar pelo nome.
 
 O ping executado dentro de um container requer que a imagem de origem tenha o comando `ping` instalado; imagens mínimas podem não incluí-lo.
+
+As ferramentas instaladas pelo terminal alteram somente o container atual e não persistem se ele for removido e recriado. Para SSH, instalar o pacote não inicia o serviço nem publica uma porta automaticamente.
 
 O terminal permite executar comandos dentro de containers ativos. Mantenha a API acessível apenas a pessoas confiáveis e não a exponha à internet.
 

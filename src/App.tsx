@@ -28,10 +28,15 @@ import {
   Copy,
   Link as LinkIcon,
   Unlink,
+  PackagePlus,
+  Cpu,
+  MemoryStick,
+  Monitor,
+  Wifi,
 } from 'lucide-react'
-import { formatBytes, loadDockerData, request, type Container, type DockerData, type Image, type Network, type Volume } from './api'
+import { formatBytes, loadDockerData, request, type Container, type DockerData, type Image, type MachineInfo, type Network, type Volume } from './api'
 
-type Section = 'overview' | 'containers' | 'images' | 'volumes' | 'networks'
+type Section = 'overview' | 'containers' | 'images' | 'volumes' | 'networks' | 'machine'
 type DialogKind = 'container' | 'image' | 'volume' | 'network' | 'network-members' | 'logs' | 'shell'
 type DialogState = { kind: DialogKind; title?: string; target?: string }
 
@@ -46,11 +51,24 @@ const navigation: { id: Section; label: string; icon: typeof Boxes }[] = [
   { id: 'images', label: 'Images', icon: ImageIcon },
   { id: 'volumes', label: 'Volumes', icon: HardDrive },
   { id: 'networks', label: 'Redes', icon: NetworkIcon },
+  { id: 'machine', label: 'Máquina', icon: Monitor },
 ]
 
 const sectionTitles: Record<Section, string> = {
-  overview: 'Visão geral', containers: 'Containers', images: 'Images', volumes: 'Volumes', networks: 'Redes',
+  overview: 'Visão geral', containers: 'Containers', images: 'Images', volumes: 'Volumes', networks: 'Redes', machine: 'Máquina',
 }
+
+const installableTools = [
+  { id: 'ping', label: 'Ping', detail: 'Teste de rede' },
+  { id: 'vim', label: 'Vim', detail: 'Editor de texto' },
+  { id: 'curl', label: 'cURL', detail: 'Requisições HTTP' },
+  { id: 'ssh-client', label: 'Cliente SSH', detail: 'Conexão remota' },
+  { id: 'ssh-server', label: 'Servidor SSH', detail: 'Instala, não inicia' },
+  { id: 'wget', label: 'Wget', detail: 'Download de arquivos' },
+  { id: 'git', label: 'Git', detail: 'Controle de versão' },
+  { id: 'process-tools', label: 'Processos', detail: 'ps e top' },
+  { id: 'dns-tools', label: 'DNS', detail: 'dig e nslookup' },
+] as const
 
 function displayImage(images: string[] | undefined) {
   return images?.length ? images.join(', ') : 'imagem sem tag'
@@ -69,6 +87,7 @@ function IconButton({ label, onClick, children, danger = false, disabled = false
 
 function App() {
   const [data, setData] = useState<DockerData>(emptyData)
+  const [machine, setMachine] = useState<MachineInfo | null>(null)
   const [section, setSection] = useState<Section>('overview')
   const [query, setQuery] = useState('')
   const [loading, setLoading] = useState(true)
@@ -83,7 +102,12 @@ function App() {
   async function refresh() {
     setLoading(true)
     try {
-      setData(await loadDockerData())
+      const [dockerData, machineData] = await Promise.all([
+        loadDockerData(),
+        request<MachineInfo>('/api/machine/'),
+      ])
+      setData(dockerData)
+      setMachine(machineData)
       setError('')
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Não foi possível carregar os recursos Docker.')
@@ -261,11 +285,11 @@ function App() {
           {notice && <div className="alert alert-success"><Check size={18} /><span>{notice}</span><button aria-label="Fechar aviso" onClick={() => setNotice('')}><X size={16} /></button></div>}
 
           <div className="page-heading">
-            <div><div className="eyebrow">AMBIENTE LOCAL <span className="eyebrow-rule" /></div><h1>{section === 'overview' ? 'Seu ambiente Docker' : sectionTitles[section]}</h1><p>{section === 'overview' ? 'Recursos e atividade do Docker em um só lugar.' : `${sectionTitles[section]} disponíveis neste ambiente.`}</p></div>
+            <div><div className="eyebrow">AMBIENTE LOCAL <span className="eyebrow-rule" /></div><h1>{section === 'overview' ? 'Seu ambiente Docker' : sectionTitles[section]}</h1><p>{section === 'overview' ? 'Recursos e atividade do Docker em um só lugar.' : section === 'machine' ? 'Hardware, sistema operacional e endereços desta máquina.' : `${sectionTitles[section]} disponíveis neste ambiente.`}</p></div>
             {action && <button className="primary-button" onClick={() => setDialog({ kind: action.dialog })} disabled={busy}><action.icon size={17} />{action.label}</button>}
           </div>
 
-          {section === 'overview' ? <Overview data={data} runningCount={runningCount} loading={loading} onNavigate={setSection} /> : <>
+          {section === 'overview' ? <Overview data={data} runningCount={runningCount} loading={loading} onNavigate={setSection} /> : section === 'machine' ? <MachinePanel machine={machine} loading={loading} /> : <>
             <div className="table-toolbar">
               <div className="table-count"><span className="count-dot" />{loading ? 'Sincronizando recursos' : `${resourceCount(section, data)} ${pluralResource(section, resourceCount(section, data))}`}</div>
               <label className="search-field"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Buscar ${sectionTitles[section].toLowerCase()}...`} /><kbd>⌘ K</kbd></label>
@@ -338,6 +362,52 @@ function Overview({ data, runningCount, loading, onNavigate }: { data: DockerDat
       </section>
     </div>
   </>
+}
+
+function UsageBar({ value, tone = 'green' }: { value: number; tone?: 'green' | 'blue' | 'amber' }) {
+  const percent = Math.max(0, Math.min(100, value))
+  return <div className={`usage-bar ${tone}`} role="meter" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100}><span style={{ width: `${percent}%` }} /></div>
+}
+
+function MachinePanel({ machine, loading }: { machine: MachineInfo | null; loading: boolean }) {
+  if (!machine) return <div className="machine-loading">{loading ? 'Lendo configurações da máquina...' : 'Não foi possível carregar as configurações da máquina.'}</div>
+
+  return <div className="machine-panel">
+    <section className="machine-identity">
+      <div className="machine-identity-icon"><Monitor size={22} /></div>
+      <div className="machine-identity-copy"><span className="section-eyebrow">SISTEMA OPERACIONAL</span><h2>{machine.hostname}</h2><p>{machine.system} {machine.release} · {machine.architecture}</p></div>
+      <span className="machine-processor">{machine.processor}</span>
+    </section>
+
+    <div className="machine-metrics-grid">
+      <section className="machine-metric">
+        <div className="machine-metric-heading"><span className="machine-metric-icon cpu"><Cpu size={17} /></span><span>Processador</span></div>
+        <strong className="machine-metric-value">{machine.cpu_percent.toFixed(1)}<small>%</small></strong>
+        <UsageBar value={machine.cpu_percent} tone="green" />
+        <div className="machine-metric-foot"><span>{machine.cpu_count} núcleos</span><span>{machine.cpu_logical_count} lógicos</span></div>
+      </section>
+      <section className="machine-metric">
+        <div className="machine-metric-heading"><span className="machine-metric-icon memory"><MemoryStick size={17} /></span><span>Memória RAM</span></div>
+        <strong className="machine-metric-value">{formatBytes(machine.memory.used_bytes)}<small> / {formatBytes(machine.memory.total_bytes)}</small></strong>
+        <UsageBar value={machine.memory.used_percent} tone="blue" />
+        <div className="machine-metric-foot"><span>{machine.memory.used_percent.toFixed(1)}% em uso</span><span>{formatBytes(machine.memory.available_bytes)} disponível</span></div>
+      </section>
+    </div>
+
+    <section className="machine-section">
+      <div className="machine-section-heading"><span className="machine-metric-icon disk"><HardDrive size={17} /></span><div><h2>Armazenamento</h2><p>Uso dos discos visíveis pelo backend</p></div></div>
+      <div className="machine-disk-list">{machine.disks.map((disk) => <div className="machine-disk" key={`${disk.device}-${disk.mountpoint}`}>
+        <div className="machine-disk-top"><strong title={disk.mountpoint}>{disk.mountpoint}</strong><span>{disk.filesystem}</span></div>
+        <UsageBar value={disk.used_percent} tone="amber" />
+        <div className="machine-metric-foot"><span>{formatBytes(disk.used_bytes)} usados de {formatBytes(disk.total_bytes)}</span><span>{disk.used_percent.toFixed(1)}%</span></div>
+      </div>)}</div>
+    </section>
+
+    <section className="machine-section machine-network-section">
+      <div className="machine-section-heading"><span className="machine-metric-icon network"><Wifi size={17} /></span><div><h2>Rede da máquina</h2><p>Endereços IPv4 detectados</p></div></div>
+      <div className="machine-ip-list">{machine.ip_addresses.length ? machine.ip_addresses.map((address) => <code key={address}>{address}</code>) : <span className="machine-muted">Nenhum IPv4 encontrado</span>}</div>
+    </section>
+  </div>
 }
 
 function EmptyState({ label, detail, icon: Icon }: { label: string; detail: string; icon: typeof Boxes }) {
@@ -505,6 +575,7 @@ function ContainerShellDialog({ containerId, title, onClose }: { containerId: st
   const [command, setCommand] = useState('')
   const [output, setOutput] = useState('Terminal pronto.')
   const [busy, setBusy] = useState(false)
+  const [selectedTools, setSelectedTools] = useState<string[]>([])
 
   async function runCommand(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -526,7 +597,25 @@ function ContainerShellDialog({ containerId, title, onClose }: { containerId: st
     }
   }
 
-  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><section className="modal logs-modal shell-modal" role="dialog" aria-modal="true" aria-labelledby="shell-title"><div className="modal-head"><div><span className="modal-kicker">TERMINAL DO CONTAINER</span><h2 id="shell-title">{title}</h2></div><button className="close-button" onClick={onClose} aria-label="Fechar" disabled={busy}><X size={19} /></button></div><div className="logs-toolbar"><TerminalSquare size={15} /><label>Shell<select value={shell} onChange={(event) => setShell(event.target.value)} disabled={busy}><option value="/bin/sh">sh</option><option value="/bin/bash">bash</option><option value="cmd.exe">Windows cmd</option></select></label><span>Cada comando inicia um processo novo.</span></div><pre className="logs-output shell-output">{output}{busy && <span className="logs-loading"><LoaderCircle size={15} className="spinning" />Executando...</span>}</pre><form className="shell-command-form" onSubmit={(event) => void runCommand(event)}><span aria-hidden="true">&gt;_</span><input aria-label="Comando para executar" autoFocus value={command} onChange={(event) => setCommand(event.target.value)} placeholder="Digite um comando..." disabled={busy} /><button type="submit" title="Executar comando" aria-label="Executar comando" disabled={busy || !command.trim()}><Play size={16} /></button></form></section></div>
+  async function installSelectedTools() {
+    if (!selectedTools.length || busy) return
+    const names = installableTools.filter((tool) => selectedTools.includes(tool.id)).map((tool) => tool.label)
+    setBusy(true)
+    setOutput((current) => `${current}\n$ Instalando: ${names.join(', ')}\n`)
+    try {
+      const result = await request<{ exit_code: number; output: string }>(`/api/containers/${encodeURIComponent(containerId)}/packages`, {
+        method: 'POST',
+        body: JSON.stringify({ tools: selectedTools }),
+      })
+      setOutput((current) => `${current}${result.output || '(sem saída)'}\n[ código ${result.exit_code} ]\n`)
+    } catch (reason) {
+      setOutput((current) => `${current}${reason instanceof Error ? reason.message : 'Não foi possível instalar as ferramentas.'}\n`)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><section className="modal logs-modal shell-modal" role="dialog" aria-modal="true" aria-labelledby="shell-title"><div className="modal-head"><div><span className="modal-kicker">TERMINAL DO CONTAINER</span><h2 id="shell-title">{title}</h2></div><button className="close-button" onClick={onClose} aria-label="Fechar" disabled={busy}><X size={19} /></button></div><div className="logs-toolbar"><TerminalSquare size={15} /><label>Shell<select value={shell} onChange={(event) => setShell(event.target.value)} disabled={busy}><option value="/bin/sh">sh</option><option value="/bin/bash">bash</option><option value="cmd.exe">Windows cmd</option></select></label><span>Cada comando inicia um processo novo.</span></div><div className="package-installer"><div className="package-installer-heading"><span><PackagePlus size={16} />Instalar ferramentas</span><small>Gerenciador detectado automaticamente</small></div><div className="package-tool-grid">{installableTools.map((tool) => <label className="package-tool-choice" key={tool.id}><input type="checkbox" checked={selectedTools.includes(tool.id)} onChange={(event) => setSelectedTools((current) => event.target.checked ? [...current, tool.id] : current.filter((item) => item !== tool.id))} disabled={busy || shell === 'cmd.exe'} /><span><strong>{tool.label}</strong><small>{tool.detail}</small></span></label>)}</div><div className="package-installer-footer"><small>Instala neste container como root. Os pacotes não acompanham uma recriação do container.</small><button className="secondary-button" type="button" onClick={() => void installSelectedTools()} disabled={busy || !selectedTools.length || shell === 'cmd.exe'}>{busy ? <LoaderCircle size={15} className="spinning" /> : <PackagePlus size={15} />}{busy ? 'Instalando...' : 'Instalar seleção'}</button></div></div><pre className="logs-output shell-output">{output}{busy && <span className="logs-loading"><LoaderCircle size={15} className="spinning" />Executando...</span>}</pre><form className="shell-command-form" onSubmit={(event) => void runCommand(event)}><span aria-hidden="true">&gt;_</span><input aria-label="Comando para executar" autoFocus value={command} onChange={(event) => setCommand(event.target.value)} placeholder="Digite um comando..." disabled={busy} /><button type="submit" title="Executar comando" aria-label="Executar comando" disabled={busy || !command.trim()}><Play size={16} /></button></form></section></div>
 }
 
 export default App

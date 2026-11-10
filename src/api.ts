@@ -44,6 +44,21 @@ export type DockerData = {
   health: { api: string; docker: string; docker_version?: string }
 }
 
+export type MachineInfo = {
+  hostname: string
+  system: string
+  release: string
+  version: string
+  architecture: string
+  processor: string
+  cpu_count: number
+  cpu_logical_count: number
+  cpu_percent: number
+  memory: { total_bytes: number; available_bytes: number; used_bytes: number; used_percent: number }
+  disks: { device: string; mountpoint: string; filesystem: string; total_bytes: number; used_bytes: number; free_bytes: number; used_percent: number }[]
+  ip_addresses: string[]
+}
+
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   let response: Response
   try {
