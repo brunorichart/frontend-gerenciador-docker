@@ -238,6 +238,13 @@ td:last-child { min-width: 150px; }
 .network-connect-form label { display: grid; min-width: 0; flex: 1; gap: 6px; color: #46534a; font-size: 10px; font-weight: 700; }
 .network-connect-form select { width: 100%; height: 37px; border: 1px solid #dfe5de; border-radius: 4px; background: #fff; padding: 0 10px; color: #28362d; font-size: 11px; }
 .network-dialog-hint { border-left: 2px solid #91b99c; background: #f4f8f3; padding: 8px 9px; color: #6d7d70; font-size: 9px; line-height: 1.5; }
+.network-ping-form { display: grid; gap: 10px; border-top: 1px solid #edf0ec; padding-top: 14px; }
+.network-ping-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.network-ping-fields label { display: grid; min-width: 0; gap: 6px; color: #46534a; font-size: 10px; font-weight: 700; }
+.network-ping-fields input, .network-ping-fields select { width: 100%; height: 36px; border: 1px solid #dfe5de; border-radius: 4px; background: #fff; padding: 0 9px; color: #28362d; font-size: 10px; }
+.network-ping-button { width: fit-content; gap: 7px; }
+.network-ping-hint { color: #89948b; font-size: 9px; line-height: 1.5; }
+.network-ping-output { max-height: 220px; overflow: auto; margin: 0; border-radius: 3px; background: #18221b; padding: 11px; color: #d0dfd2; font: 9px/1.6 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
 .network-modal-actions { padding: 0 20px 17px; }
 .logs-toolbar { display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #edf0ec; background: #f9faf8; padding: 10px 17px; color: #859087; font: 10px var(--mono); }
 .logs-toolbar button { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; border: 0; background: transparent; color: #377c56; font: 10px 'DM Sans', sans-serif; cursor: pointer; }

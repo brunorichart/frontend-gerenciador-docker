@@ -302,7 +302,7 @@ function App() {
       {dialog && (dialog.kind === 'container' || dialog.kind === 'image' || dialog.kind === 'volume' || dialog.kind === 'network') && <ResourceDialog kind={dialog.kind} images={data.images} volumes={data.volumes} busy={busy} onClose={() => setDialog(null)} onSubmit={submitDialog} />}
       {dialog?.kind === 'logs' && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setDialog(null) }}><section className="modal logs-modal" role="dialog" aria-modal="true" aria-labelledby="logs-title"><div className="modal-head"><div><span className="modal-kicker">SAÍDA DO CONTAINER</span><h2 id="logs-title">{dialog.title}</h2></div><button className="close-button" onClick={() => setDialog(null)} aria-label="Fechar"><X size={19} /></button></div><div className="logs-toolbar"><TerminalSquare size={15} />Últimas 100 linhas <button onClick={() => { const item = data.containers.find((container) => container.id === dialog.target); if (item) void showLogs(item) }}><RefreshCw size={14} />Recarregar</button></div><pre className="logs-output">{logsLoading ? <span className="logs-loading"><LoaderCircle size={16} className="spinning" />Carregando logs...</span> : logs}</pre></section></div>}
       {dialog?.kind === 'shell' && <ContainerShellDialog containerId={dialog.target || ''} title={dialog.title || 'Container'} onClose={() => setDialog(null)} />}
-      {dialog?.kind === 'network-members' && <NetworkConnectionsDialog network={data.networks.find((item) => item.id === dialog.target)} containers={data.containers} busy={busy} onClose={() => setDialog(null)} onConnect={(containerId) => perform(() => request(`/api/networks/${encodeURIComponent(dialog.target || '')}/connect`, { method: 'POST', body: JSON.stringify({ container_id: containerId }) }), 'Container conectado à rede.')} onDisconnect={(containerId, containerName) => perform(() => request(`/api/networks/${encodeURIComponent(dialog.target || '')}/containers/${encodeURIComponent(containerId)}`, { method: 'DELETE' }), `Container ${containerName} desconectado da rede.`)} />}
+      {dialog?.kind === 'network-members' && <NetworkConnectionsDialog network={data.networks.find((item) => item.id === dialog.target)} containers={data.containers} hostAddresses={data.host_addresses} busy={busy} onClose={() => setDialog(null)} onConnect={(containerId) => perform(() => request(`/api/networks/${encodeURIComponent(dialog.target || '')}/connect`, { method: 'POST', body: JSON.stringify({ container_id: containerId }) }), 'Container conectado à rede.')} onDisconnect={(containerId, containerName) => perform(() => request(`/api/networks/${encodeURIComponent(dialog.target || '')}/containers/${encodeURIComponent(containerId)}`, { method: 'DELETE' }), `Container ${containerName} desconectado da rede.`)} />}
     </div>
   )
 }
@@ -378,18 +378,48 @@ function HostAddressBar({ addresses, onCopy }: { addresses: string[]; onCopy: (a
   return <section className="host-address-bar"><span className="host-address-title"><Server size={16} />IP desta máquina</span>{addresses.length ? <div className="host-address-list">{addresses.map((address) => <span className="host-address" key={address}><code>{address}</code><IconButton label={`Copiar IP ${address}`} onClick={() => onCopy(address)}><Copy size={14} /></IconButton></span>)}</div> : <span className="network-no-members">Nenhum endereço IPv4 local encontrado</span>}<small>Use o IP da mesma rede para acessar serviços publicados neste computador.</small></section>
 }
 
-function NetworkConnectionsDialog({ network, containers, busy, onClose, onConnect, onDisconnect }: {
+function NetworkConnectionsDialog({ network, containers, hostAddresses, busy, onClose, onConnect, onDisconnect }: {
   network?: Network
   containers: Container[]
+  hostAddresses: string[]
   busy: boolean
   onClose: () => void
   onConnect: (containerId: string) => void
   onDisconnect: (containerId: string, containerName: string) => void
 }) {
   const [selectedContainer, setSelectedContainer] = useState('')
+  const [pingSourceId, setPingSourceId] = useState('')
+  const [pingTargetKind, setPingTargetKind] = useState<'container' | 'machine'>('container')
+  const [pingTargetContainerId, setPingTargetContainerId] = useState('')
+  const [pingMachineTarget, setPingMachineTarget] = useState('')
+  const [pingOutput, setPingOutput] = useState('')
+  const [pingBusy, setPingBusy] = useState(false)
   if (!network) return null
+  const networkId = network.id
   const connectedIds = new Set(network.containers.map((container) => container.id))
   const availableContainers = containers.filter((container) => !connectedIds.has(container.id))
+  const runningMembers = network.containers.filter((container) => container.status.toLowerCase() === 'running')
+  const pingTargets = runningMembers.filter((container) => container.id !== pingSourceId)
+
+  async function runNetworkPing(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const targetContainer = pingTargets.find((container) => container.id === pingTargetContainerId)
+    const target = pingTargetKind === 'container' ? targetContainer?.name : pingMachineTarget.trim()
+    if (!pingSourceId || !target) return
+    setPingBusy(true)
+    setPingOutput(`Ping de ${runningMembers.find((container) => container.id === pingSourceId)?.name} para ${target}\nExecutando até 4 pacotes...`)
+    try {
+      const result = await request<{ exit_code: number; output: string }>(`/api/networks/${encodeURIComponent(networkId)}/ping`, {
+        method: 'POST',
+        body: JSON.stringify({ source_container_id: pingSourceId, target }),
+      })
+      setPingOutput(`${result.output || '(sem saída)'}\n[ código ${result.exit_code} ]`)
+    } catch (reason) {
+      setPingOutput(reason instanceof Error ? reason.message : 'Não foi possível executar o ping.')
+    } finally {
+      setPingBusy(false)
+    }
+  }
 
   return <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) onClose() }}><section className="modal network-modal" role="dialog" aria-modal="true" aria-labelledby="network-dialog-title"><div className="modal-head"><div className="modal-title-wrap"><span className="dialog-icon"><NetworkIcon size={18} /></span><div><span className="modal-kicker">REDE DOCKER</span><h2 id="network-dialog-title">{network.name}</h2></div></div><button className="close-button" onClick={onClose} aria-label="Fechar"><X size={19} /></button></div>
     <div className="network-dialog-content"><div className="network-dialog-address"><span>Sub-rede <code>{network.subnet || 'não informada'}</code></span><span>Gateway <code>{network.gateway || 'não informado'}</code></span></div>
@@ -398,6 +428,7 @@ function NetworkConnectionsDialog({ network, containers, busy, onClose, onConnec
       </div>
       <form className="network-connect-form" onSubmit={(event) => { event.preventDefault(); if (selectedContainer) onConnect(selectedContainer) }}><label>Adicionar container<select value={selectedContainer} onChange={(event) => setSelectedContainer(event.target.value)}><option value="">Selecione um container</option>{availableContainers.map((container) => <option value={container.id} key={container.id}>{container.name} · {container.status}</option>)}</select></label><button className="primary-button" type="submit" disabled={busy || !selectedContainer}><LinkIcon size={15} />Conectar</button></form>
       <small className="network-dialog-hint">Em redes bridge criadas pelo usuário, os containers também podem se comunicar usando o nome um do outro.</small>
+      <form className="network-ping-form" onSubmit={(event) => void runNetworkPing(event)}><div className="network-dialog-heading"><strong>Testar conectividade</strong><span>4 pacotes · limite de 10 s</span></div><div className="network-ping-fields"><label>Enviar ping de<select value={pingSourceId} onChange={(event) => { setPingSourceId(event.target.value); setPingTargetContainerId(''); setPingOutput('') }}><option value="">Container em execução nesta rede</option>{runningMembers.map((container) => <option value={container.id} key={container.id}>{container.name} · {container.ipv4_address || 'sem IP'}</option>)}</select></label><label>Destino<select value={pingTargetKind} onChange={(event) => { setPingTargetKind(event.target.value as 'container' | 'machine'); setPingOutput('') }}><option value="container">Outro container desta rede</option><option value="machine">Máquina ou outro IP/nome</option></select></label>{pingTargetKind === 'container' ? <label>Container de destino<select value={pingTargetContainerId} onChange={(event) => setPingTargetContainerId(event.target.value)}><option value="">Selecione um container</option>{pingTargets.map((container) => <option value={container.id} key={container.id}>{container.name} · {container.ipv4_address || 'IP pendente'}</option>)}</select></label> : <label>IP ou nome de destino<input list={`network-ping-targets-${network.id}`} value={pingMachineTarget} onChange={(event) => setPingMachineTarget(event.target.value)} placeholder="ex.: 192.168.0.114" /><datalist id={`network-ping-targets-${network.id}`}>{hostAddresses.map((address) => <option value={address} key={address} />)}</datalist></label>}</div><small className="network-ping-hint">A imagem do container de origem precisa incluir o comando ping. Imagens mínimas podem não trazê-lo instalado.</small><button className="secondary-button network-ping-button" type="submit" disabled={pingBusy || !pingSourceId || (pingTargetKind === 'container' ? !pingTargetContainerId : !pingMachineTarget.trim())}>{pingBusy ? <LoaderCircle size={15} className="spinning" /> : <NetworkIcon size={15} />} {pingBusy ? 'Testando...' : 'Executar ping'}</button>{pingOutput && <pre className="network-ping-output">{pingOutput}</pre>}</form>
     </div>
     <div className="modal-actions network-modal-actions"><button type="button" className="secondary-button" onClick={onClose}>Fechar</button></div>
   </section></div>
